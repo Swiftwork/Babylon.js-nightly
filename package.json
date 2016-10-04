@@ -1,0 +1,34 @@
+{
+  "author": {
+    "name": "David CATUHE"
+  },
+  "bugs": {
+    "url": "https://github.com/BabylonJS/Babylon.js/issues"
+  },
+  "dependencies": {},
+  "description": "Unofficial nightly builds of Babylon.js, a JavaScript 3D engine based on webgl.",
+  "devDependencies": {},
+  "directories": {},
+  "engines": {
+    "node": "*"
+  },
+  "homepage": "https://github.com/BabylonJS/Babylon.js#readme",
+  "keywords": [
+    "3D",
+    "javascript",
+    "html5",
+    "webgl"
+  ],
+  "license": "Apache-2.0",
+  "main": "babylon.js",
+  "name": "babylonjs",
+  "private": true,
+  "optionalDependencies": {},
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Swiftwork/Babylon.js-nightly.git"
+  },
+  "scripts": {},
+  "typings": "babylon.d.ts",
+  "version": "2.5.0-alpha.4401"
+}
