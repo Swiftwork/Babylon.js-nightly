@@ -4418,6 +4418,16 @@ var BABYLON;
             this._data = {};
         }
         /**
+         * This will clear this dictionary and copy the content from the 'source' one.
+         * If the T value is a custom object, it won't be copied/cloned, the same object will be used
+         * @param source the dictionary to take the content from and copy to this dictionary
+         */
+        StringDictionary.prototype.copyFrom = function (source) {
+            var _this = this;
+            this.clear();
+            source.forEach(function (t, v) { return _this.add(t, v); });
+        };
+        /**
          * Get a value based from its key
          * @param key the given key to get the matching value from
          * @return the value if found, otherwise undefined is returned
@@ -4490,6 +4500,19 @@ var BABYLON;
             }
             this._data[key] = value;
             return true;
+        };
+        /**
+         * Get the element of the given key and remove it from the dictionary
+         * @param key
+         */
+        StringDictionary.prototype.getAndRemove = function (key) {
+            var val = this.get(key);
+            if (val !== undefined) {
+                delete this._data[key];
+                --this._count;
+                return val;
+            }
+            return null;
         };
         /**
          * Remove a key/value from the dictionary.
@@ -5472,6 +5495,34 @@ var BABYLON;
             }
         };
         /**
+         * This method will return the name of the full name of the class, including its owning module (if any).
+         * It will works only on Javascript basic data types (number, string, ...) and instance of class declared with the @className decorator or implementing a method getClassName():string (in which case the module won't be specified).
+         * @param object the object to get the class name from
+         * @return a string that can have two forms: "moduleName.className" if module was specified when the class' Name was registered or "className" if there was not module specified.
+         */
+        Tools.getFullClassName = function (object, isType) {
+            if (isType === void 0) { isType = false; }
+            var className = null;
+            var moduleName = null;
+            if (!isType && object.getClassName) {
+                className = object.getClassName();
+            }
+            else {
+                if (object instanceof Object) {
+                    var classObj = isType ? object : Object.getPrototypeOf(object);
+                    className = classObj.constructor["__bjsclassName__"];
+                    moduleName = classObj.constructor["__bjsmoduleName__"];
+                }
+                if (!className) {
+                    className = typeof object;
+                }
+            }
+            if (!className) {
+                return null;
+            }
+            return ((moduleName != null) ? (moduleName + ".") : "") + className;
+        };
+        /**
          * This method can be used with hashCodeFromStream when your input is an array of values that are either: number, string, boolean or custom type implementing the getHashCode():number method.
          * @param array
          */
@@ -5671,14 +5722,16 @@ var BABYLON;
     }());
     BABYLON.PerfCounter = PerfCounter;
     /**
-     * Use this className as a decorator on a given class definition to add it a name.
+     * Use this className as a decorator on a given class definition to add it a name and optionally its module.
      * You can then use the Tools.getClassName(obj) on an instance to retrieve its class name.
      * This method is the only way to get it done in all cases, even if the .js file declaring the class is minified
-     * @param name
+     * @param name The name of the class, case should be preserved
+     * @param module The name of the Module hosting the class, optional, but strongly recommended to specify if possible. Case should be preserved.
      */
-    function className(name) {
+    function className(name, module) {
         return function (target) {
             target["__bjsclassName__"] = name;
+            target["__bjsmoduleName__"] = (module != null) ? module : null;
         };
     }
     BABYLON.className = className;
@@ -31606,7 +31659,7 @@ var BABYLON;
         VertexData.CreateCylinder = function (options) {
             var height = options.height || 2;
             var diameterTop = (options.diameterTop === 0) ? 0 : options.diameterTop || options.diameter || 1;
-            var diameterBottom = options.diameterBottom || options.diameter || 1;
+            var diameterBottom = (options.diameterBottom === 0) ? 0 : options.diameterBottom || options.diameter || 1;
             var tessellation = options.tessellation || 24;
             var subdivisions = options.subdivisions || 1;
             var hasRings = options.hasRings;
@@ -37124,6 +37177,10 @@ var BABYLON;
              */
             this.outerGlow = true;
             /**
+             * Specifies the listof mesh excluded during the generation of the highlight layer.
+             */
+            this.excludedMeshes = [];
+            /**
              * An event triggered when the highlight layer has been disposed.
              * @type {BABYLON.Observable}
              */
@@ -37293,6 +37350,11 @@ var BABYLON;
                 if (batch.mustReturn) {
                     return;
                 }
+                // Excluded Mesh
+                if (_this.excludedMeshes.indexOf(mesh) > -1) {
+                    return;
+                }
+                ;
                 var hardwareInstancedRendering = (engine.getCaps().instancedArrays !== null) && (batch.visibleInstances[subMesh._id] !== null) && (batch.visibleInstances[subMesh._id] !== undefined);
                 var highlightLayerMesh = _this._meshes[mesh.id];
                 var material = subMesh.getMaterial();
@@ -38853,6 +38915,7 @@ var BABYLON;
             this._matrices = {};
             this._matrices3x3 = {};
             this._matrices2x2 = {};
+            this._vectors3Arrays = {};
             this._cachedWorldViewMatrix = new BABYLON.Matrix();
             this._shaderPath = shaderPath;
             options.needAlphaBlending = options.needAlphaBlending || false;
@@ -38937,6 +39000,11 @@ var BABYLON;
         ShaderMaterial.prototype.setMatrix2x2 = function (name, value) {
             this._checkUniform(name);
             this._matrices2x2[name] = value;
+            return this;
+        };
+        ShaderMaterial.prototype.setVector3Array = function (name, value) {
+            this._checkUniform(name);
+            this._vectors3Arrays[name] = value;
             return this;
         };
         ShaderMaterial.prototype.isReady = function (mesh, useInstances) {
@@ -39058,6 +39126,10 @@ var BABYLON;
                 for (name in this._matrices2x2) {
                     this._effect.setMatrix2x2(name, this._matrices2x2[name]);
                 }
+                // Vector3Array   
+                for (name in this._vectors3Arrays) {
+                    this._effect.setArray3(name, this._vectors3Arrays[name]);
+                }
             }
             _super.prototype.bind.call(this, world, mesh);
         };
@@ -39151,6 +39223,11 @@ var BABYLON;
             for (name in this._matrices2x2) {
                 serializationObject.matrices2x2[name] = this._matrices2x2[name];
             }
+            // Vector3Array
+            serializationObject.vectors3Arrays = {};
+            for (name in this._vectors3Arrays) {
+                serializationObject.vectors3Arrays[name] = this._vectors3Arrays[name];
+            }
             return serializationObject;
         };
         ShaderMaterial.Parse = function (source, scene, rootUrl) {
@@ -39208,6 +39285,10 @@ var BABYLON;
             // Matrix 2x2
             for (name in source.matrices2x2) {
                 material.setMatrix2x2(name, source.matrices2x2[name]);
+            }
+            // Vector3Array
+            for (name in source.vectors3Arrays) {
+                material.setVector3Array(name, source.vectors3Arrays[name]);
             }
             return material;
         };
