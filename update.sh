@@ -7,7 +7,6 @@ NC='\033[0m' # No Color
 printf "\n${NEU}Updating package to latest preview release of BabylonJS${NC}\n\n"
 
 VERSION=$(svn export https://github.com/BabylonJS/Babylon.js/trunk/dist/preview%20release . --force | grep -Eo "[0-9]+\.$" | sed "s/\.$//")
-echo "$VERSION"
 
 if [ -n ${VERSION+x} ]; then
   printf "\n${POS}Successfully downloaded preview release build $VERSION${NC}\n\n"
