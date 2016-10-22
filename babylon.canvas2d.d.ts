@@ -268,11 +268,16 @@ declare module BABYLON {
             id?: string;
             children?: Array<Prim2DBase>;
             size?: Size;
+            renderingPhase?: {
+                camera: Camera;
+                renderingGroupID: number;
+            };
             designSize?: Size;
             designUseHorizAxis?: boolean;
             isScreenSpace?: boolean;
             cachingStrategy?: number;
             enableInteraction?: boolean;
+            allow3DEventBelowCanvas?: boolean;
             origin?: Vector2;
             isVisible?: boolean;
             backgroundRoundRadius?: number;
@@ -413,6 +418,14 @@ declare module BABYLON {
          * @returns {}
          */
         _engineData: Canvas2DEngineBoundData;
+        /**
+         * If true is returned, pointerEvent occurring above the Canvas area also sent in 3D scene, if false they are not sent in the 3D Scene
+         */
+        /**
+         * Set true if you want pointerEvent occurring above the Canvas area to also be sent in the 3D scene.
+         * Set false if you don't want the Scene to get the events
+         */
+        allow3DEventBelowCanvas: boolean;
         createCanvasProfileInfoCanvas(): Canvas2D;
         private checkBackgroundAvailability();
         private _initPerfMetrics();
@@ -617,10 +630,12 @@ declare module BABYLON {
          *  - width: the width of the Canvas. you can alternatively use the size setting.
          *  - height: the height of the Canvas. you can alternatively use the size setting.
          *  - size: the Size of the canvas. Alternatively the width and height properties can be set. If null two behaviors depend on the cachingStrategy: if it's CACHESTRATEGY_CACHECANVAS then it will always auto-fit the rendering device, in all the other modes it will fit the content of the Canvas
+         *  - renderingPhase: you can specify for which camera and which renderGroup this canvas will render to enable interleaving of 3D/2D content through the use of renderinGroup. As a rendering Group is rendered for each camera, you have to specify in the scope of which camera you want the canvas' render to be made. Default behavior will render the Canvas at the very end of the render loop.
          *  - designSize: if you want to set the canvas content based on fixed coordinates whatever the final canvas dimension would be, set this. For instance a designSize of 360*640 will give you the possibility to specify all the children element in this frame. The Canvas' true size will be the HTMLCanvas' size: for instance it could be 720*1280, then a uniform scale of 2 will be applied on the Canvas to keep the absolute coordinates working as expecting. If the ratios of the designSize and the true Canvas size are not the same, then the scale is computed following the designUseHorizAxis member by using either the size of the horizontal axis or the vertical axis.
          *  - designUseHorizAxis: you can set this member if you use designSize to specify which axis is priority to compute the scale when the ratio of the canvas' size is different from the designSize's one.
          *  - cachingStrategy: either CACHESTRATEGY_TOPLEVELGROUPS, CACHESTRATEGY_ALLGROUPS, CACHESTRATEGY_CANVAS, CACHESTRATEGY_DONTCACHE. Please refer to their respective documentation for more information. Default is Canvas2D.CACHESTRATEGY_DONTCACHE
          *  - enableInteraction: if true the pointer events will be listened and rerouted to the appropriate primitives of the Canvas2D through the Prim2DBase.onPointerEventObservable observable property. Default is true.
+         *  - allow3DEventBelowCanvas: by default pointerEvent occurring above the Canvas will prevent to be also sent in the 3D Scene. If you set this setting to true, events will be sent both for Canvas and 3D Scene
          *  - isVisible: true if the canvas must be visible, false for hidden. Default is true.
          * - backgroundRoundRadius: the round radius of the background, either backgroundFill or backgroundBorder must be specified.
          * - backgroundFill: the brush to use to create a background fill for the canvas. can be a string value (see BABYLON.Canvas2D.GetBrushFromString) or a IBrush2D instance.
@@ -643,11 +658,16 @@ declare module BABYLON {
             width?: number;
             height?: number;
             size?: Size;
+            renderingPhase?: {
+                camera: Camera;
+                renderingGroupID: number;
+            };
             designSize?: Size;
             designUseHorizAxis?: boolean;
             cachingStrategy?: number;
             cacheBehavior?: number;
             enableInteraction?: boolean;
+            allow3DEventBelowCanvas?: boolean;
             isVisible?: boolean;
             backgroundRoundRadius?: number;
             backgroundFill?: IBrush2D | string;
@@ -2915,6 +2935,7 @@ declare module BABYLON {
         static flagDontInheritParentScale: number;
         static flagGlobalTransformDirty: number;
         static flagLayoutBoundingInfoDirty: number;
+        static flagAllow3DEventsBelowCanvas: number;
         private _flags;
         private _modelKey;
         protected _levelBoundingInfo: BoundingInfo2D;

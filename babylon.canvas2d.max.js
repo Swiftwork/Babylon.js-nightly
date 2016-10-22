@@ -2635,7 +2635,8 @@ var BABYLON;
         SmartPropertyPrim.flagActualScaleDirty = 0x0040000; // set if the actualScale property needs to be recomputed
         SmartPropertyPrim.flagDontInheritParentScale = 0x0080000; // set if the actualScale must not use its parent's scale to be computed
         SmartPropertyPrim.flagGlobalTransformDirty = 0x0100000; // set if the global transform must be recomputed due to a local transform change
-        SmartPropertyPrim.flagLayoutBoundingInfoDirty = 0x0100000; // set if the layout bounding info is dirty
+        SmartPropertyPrim.flagLayoutBoundingInfoDirty = 0x0200000; // set if the layout bounding info is dirty
+        SmartPropertyPrim.flagAllow3DEventsBelowCanvas = 0x0400000; // set if pointer events should be sent to 3D Engine when the pointer is over the Canvas
         SmartPropertyPrim = __decorate([
             BABYLON.className("SmartPropertyPrim", "BABYLON")
         ], SmartPropertyPrim);
@@ -4236,7 +4237,10 @@ var BABYLON;
              * Setting this property may have no effect is specific alignment are in effect.
              */
             get: function () {
-                return this._position || Prim2DBase._nullPosition;
+                if (!this._position) {
+                    this._position = BABYLON.Vector2.Zero();
+                }
+                return this._position;
             },
             set: function (value) {
                 if (!this._checkPositionChange()) {
@@ -4813,7 +4817,10 @@ var BABYLON;
              * The setter should only be called by a Layout Engine class.
              */
             get: function () {
-                return this._layoutAreaPos || Prim2DBase._nullPosition;
+                if (!this._layoutAreaPos) {
+                    this._layoutAreaPos = BABYLON.Vector2.Zero();
+                }
+                return this._layoutAreaPos;
             },
             set: function (val) {
                 if (this._layoutAreaPos && this._layoutAreaPos.equals(val)) {
@@ -11596,6 +11603,7 @@ var BABYLON;
             this._trackedGroups = new Array();
             this._maxAdaptiveWorldSpaceCanvasSize = null;
             this._groupCacheMaps = new BABYLON.StringDictionary();
+            this._changeFlags(BABYLON.SmartPropertyPrim.flagAllow3DEventsBelowCanvas, (settings.allow3DEventBelowCanvas != null) && settings.allow3DEventBelowCanvas);
             this._patchHierarchy(this);
             var enableInteraction = (settings.enableInteraction == null) ? true : settings.enableInteraction;
             this._fitRenderingDevice = !settings.size;
@@ -11607,10 +11615,23 @@ var BABYLON;
                 _this.dispose();
             });
             if (this._isScreenSpace) {
-                this._afterRenderObserver = this._scene.onAfterRenderObservable.add(function (d, s) {
-                    _this._engine.clear(null, false, true, true);
-                    _this._render();
-                });
+                if (settings.renderingPhase) {
+                    if (!settings.renderingPhase.camera || settings.renderingPhase.renderingGroupID == null) {
+                        throw Error("You have to specify a valid camera and renderingGroup");
+                    }
+                    this._scene.onRenderingGroupObservable.add(function (e, s) {
+                        if (_this._scene.activeCamera === settings.renderingPhase.camera) {
+                            _this._engine.clear(null, false, true, true);
+                            _this._render();
+                        }
+                    }, Math.pow(2, settings.renderingPhase.renderingGroupID));
+                }
+                else {
+                    this._afterRenderObserver = this._scene.onAfterRenderObservable.add(function (d, s) {
+                        _this._engine.clear(null, false, true, true);
+                        _this._render();
+                    });
+                }
             }
             else {
                 this._beforeRenderObserver = this._scene.onBeforeRenderObservable.add(function (d, s) {
@@ -11859,6 +11880,12 @@ var BABYLON;
                 skip = !this._bubbleNotifyPrimPointerObserver(targetPrim, BABYLON.PrimitivePointerInfo.PointerUp, eventData);
             }
             eventState.skipNextObservers = skip;
+            if (!skip && (this._isFlagSet(BABYLON.SmartPropertyPrim.flagAllow3DEventsBelowCanvas) === false)) {
+                eventState.skipNextObservers = true;
+                if (eventData instanceof BABYLON.PointerInfoPre) {
+                    eventData.skipOnPointerObservable = true;
+                }
+            }
         };
         Canvas2D.prototype._updatePointerInfo = function (eventData, localPosition) {
             var s = this.scale;
@@ -12409,6 +12436,23 @@ var BABYLON;
              */
             get: function () {
                 return this.__engineData;
+            },
+            enumerable: true,
+            configurable: true
+        });
+        Object.defineProperty(Canvas2D.prototype, "allow3DEventBelowCanvas", {
+            /**
+             * If true is returned, pointerEvent occurring above the Canvas area also sent in 3D scene, if false they are not sent in the 3D Scene
+             */
+            get: function () {
+                return this._isFlagSet(BABYLON.SmartPropertyPrim.flagAllow3DEventsBelowCanvas);
+            },
+            /**
+             * Set true if you want pointerEvent occurring above the Canvas area to also be sent in the 3D scene.
+             * Set false if you don't want the Scene to get the events
+             */
+            set: function (value) {
+                this._changeFlags(BABYLON.SmartPropertyPrim.flagAllow3DEventsBelowCanvas, value);
             },
             enumerable: true,
             configurable: true
@@ -13029,10 +13073,12 @@ var BABYLON;
          *  - width: the width of the Canvas. you can alternatively use the size setting.
          *  - height: the height of the Canvas. you can alternatively use the size setting.
          *  - size: the Size of the canvas. Alternatively the width and height properties can be set. If null two behaviors depend on the cachingStrategy: if it's CACHESTRATEGY_CACHECANVAS then it will always auto-fit the rendering device, in all the other modes it will fit the content of the Canvas
+         *  - renderingPhase: you can specify for which camera and which renderGroup this canvas will render to enable interleaving of 3D/2D content through the use of renderinGroup. As a rendering Group is rendered for each camera, you have to specify in the scope of which camera you want the canvas' render to be made. Default behavior will render the Canvas at the very end of the render loop.
          *  - designSize: if you want to set the canvas content based on fixed coordinates whatever the final canvas dimension would be, set this. For instance a designSize of 360*640 will give you the possibility to specify all the children element in this frame. The Canvas' true size will be the HTMLCanvas' size: for instance it could be 720*1280, then a uniform scale of 2 will be applied on the Canvas to keep the absolute coordinates working as expecting. If the ratios of the designSize and the true Canvas size are not the same, then the scale is computed following the designUseHorizAxis member by using either the size of the horizontal axis or the vertical axis.
          *  - designUseHorizAxis: you can set this member if you use designSize to specify which axis is priority to compute the scale when the ratio of the canvas' size is different from the designSize's one.
          *  - cachingStrategy: either CACHESTRATEGY_TOPLEVELGROUPS, CACHESTRATEGY_ALLGROUPS, CACHESTRATEGY_CANVAS, CACHESTRATEGY_DONTCACHE. Please refer to their respective documentation for more information. Default is Canvas2D.CACHESTRATEGY_DONTCACHE
          *  - enableInteraction: if true the pointer events will be listened and rerouted to the appropriate primitives of the Canvas2D through the Prim2DBase.onPointerEventObservable observable property. Default is true.
+         *  - allow3DEventBelowCanvas: by default pointerEvent occurring above the Canvas will prevent to be also sent in the 3D Scene. If you set this setting to true, events will be sent both for Canvas and 3D Scene
          *  - isVisible: true if the canvas must be visible, false for hidden. Default is true.
          * - backgroundRoundRadius: the round radius of the background, either backgroundFill or backgroundBorder must be specified.
          * - backgroundFill: the brush to use to create a background fill for the canvas. can be a string value (see BABYLON.Canvas2D.GetBrushFromString) or a IBrush2D instance.
