@@ -13042,8 +13042,12 @@ var BABYLON;
             }
         };
         ;
+        Camera.prototype.unfreezeProjectionMatrix = function () {
+            this._doNotComputeProjectionMatrix = false;
+        };
+        ;
         Camera.prototype.getProjectionMatrix = function (force) {
-            if ((!force && this._isSynchronizedProjectionMatrix()) || this._doNotComputeProjectionMatrix) {
+            if (this._doNotComputeProjectionMatrix || (!force && this._isSynchronizedProjectionMatrix())) {
                 return this._projectionMatrix;
             }
             this._refreshFrustumPlanes = true;
@@ -16918,7 +16922,12 @@ var BABYLON;
                     _this.setPointerOverSprite(null);
                     _this.setPointerOverMesh(pickResult.pickedMesh);
                     if (_this._pointerOverMesh.actionManager && _this._pointerOverMesh.actionManager.hasPointerTriggers) {
-                        canvas.style.cursor = _this.hoverCursor;
+                        if (_this._pointerOverMesh.actionManager.hoverCursor) {
+                            canvas.style.cursor = _this._pointerOverMesh.actionManager.hoverCursor;
+                        }
+                        else {
+                            canvas.style.cursor = _this.hoverCursor;
+                        }
                     }
                     else {
                         canvas.style.cursor = "";
@@ -16929,8 +16938,13 @@ var BABYLON;
                     // Sprites
                     pickResult = _this.pickSprite(_this._unTranslatedPointerX, _this._unTranslatedPointerY, spritePredicate, false, _this.cameraToUseForPointers);
                     if (pickResult.hit && pickResult.pickedSprite) {
-                        canvas.style.cursor = _this.hoverCursor;
                         _this.setPointerOverSprite(pickResult.pickedSprite);
+                        if (_this._pointerOverSprite.actionManager && _this._pointerOverSprite.actionManager.hoverCursor) {
+                            canvas.style.cursor = _this._pointerOverSprite.actionManager.hoverCursor;
+                        }
+                        else {
+                            canvas.style.cursor = _this.hoverCursor;
+                        }
                     }
                     else {
                         _this.setPointerOverSprite(null);
@@ -23341,6 +23355,10 @@ var BABYLON;
             return new Texture("data:" + name, scene, noMipmap, invertY, samplingMode, onLoad, onError, data);
         };
         Texture.Parse = function (parsedTexture, scene, rootUrl) {
+            if (parsedTexture.customType) {
+                var customTexture = BABYLON.Tools.Instantiate(parsedTexture.customType);
+                return customTexture.Parse(parsedTexture, scene, rootUrl);
+            }
             if (parsedTexture.isCube) {
                 return BABYLON.CubeTexture.Parse(parsedTexture, scene, rootUrl);
             }
@@ -23348,11 +23366,7 @@ var BABYLON;
                 return null;
             }
             var texture = BABYLON.SerializationHelper.Parse(function () {
-                if (parsedTexture.customType) {
-                    var customTexture = BABYLON.Tools.Instantiate(parsedTexture.customType);
-                    return customTexture.Parse(parsedTexture, scene, rootUrl);
-                }
-                else if (parsedTexture.mirrorPlane) {
+                if (parsedTexture.mirrorPlane) {
                     var mirrorTexture = new BABYLON.MirrorTexture(parsedTexture.name, parsedTexture.renderTargetSize, scene);
                     mirrorTexture._waitingRenderList = parsedTexture.renderList;
                     mirrorTexture.mirrorPlane = BABYLON.Plane.FromArray(parsedTexture.mirrorPlane);
@@ -29350,6 +29364,13 @@ var BABYLON;
         };
         Animatable.prototype.goToFrame = function (frame) {
             var animations = this._animations;
+            if (animations[0]) {
+                var fps = animations[0].framePerSecond;
+                var currentFrame = animations[0].currentFrame;
+                var adjustTime = frame - currentFrame;
+                var delay = adjustTime * 1000 / fps;
+                this._localDelayOffset -= delay;
+            }
             for (var index = 0; index < animations.length; index++) {
                 animations[index].goToFrame(frame);
             }
@@ -29696,6 +29717,24 @@ var BABYLON;
             this._invertedAbsoluteTransform = new BABYLON.Matrix();
             this._scaleMatrix = BABYLON.Matrix.Identity();
             this._scaleVector = new BABYLON.Vector3(1, 1, 1);
+            this._negateScaleChildren = new BABYLON.Vector3(1, 1, 1);
+            this._syncScaleVector = function () {
+                var lm = this.getLocalMatrix();
+                var xsq = (lm.m[0] * lm.m[0] + lm.m[1] * lm.m[1] + lm.m[2] * lm.m[2]);
+                var ysq = (lm.m[4] * lm.m[4] + lm.m[5] * lm.m[5] + lm.m[6] * lm.m[6]);
+                var zsq = (lm.m[8] * lm.m[8] + lm.m[9] * lm.m[9] + lm.m[10] * lm.m[10]);
+                var xs = lm.m[0] * lm.m[1] * lm.m[2] * lm.m[3] < 0 ? -1 : 1;
+                var ys = lm.m[4] * lm.m[5] * lm.m[6] * lm.m[7] < 0 ? -1 : 1;
+                var zs = lm.m[8] * lm.m[9] * lm.m[10] * lm.m[11] < 0 ? -1 : 1;
+                this._scaleVector.x = xs * Math.sqrt(xsq);
+                this._scaleVector.y = ys * Math.sqrt(ysq);
+                this._scaleVector.z = zs * Math.sqrt(zsq);
+                if (this._parent) {
+                    this._scaleVector.x /= this._parent._negateScaleChildren.x;
+                    this._scaleVector.y /= this._parent._negateScaleChildren.y;
+                    this._scaleVector.z /= this._parent._negateScaleChildren.z;
+                }
+            };
             this._skeleton = skeleton;
             this._matrix = matrix;
             this._baseMatrix = matrix;
@@ -29819,8 +29858,50 @@ var BABYLON;
             this.animations[0].createRange(rangeName, from + frameOffset, to + frameOffset);
             return true;
         };
+        Bone.prototype.translate = function (vec) {
+            var lm = this.getLocalMatrix();
+            lm.m[12] += vec.x;
+            lm.m[13] += vec.y;
+            lm.m[14] += vec.z;
+            this.markAsDirty();
+        };
+        Bone.prototype.setPosition = function (position) {
+            var lm = this.getLocalMatrix();
+            lm.m[12] = position.x;
+            lm.m[13] = position.y;
+            lm.m[14] = position.z;
+            this.markAsDirty();
+        };
+        Bone.prototype.setAbsolutePosition = function (position, mesh) {
+            if (mesh === void 0) { mesh = null; }
+            this._skeleton.computeAbsoluteTransforms();
+            var tmat = BABYLON.Tmp.Matrix[0];
+            var vec = BABYLON.Tmp.Vector3[0];
+            if (mesh) {
+                tmat.copyFrom(this._parent.getAbsoluteTransform());
+                tmat.multiplyToRef(mesh.getWorldMatrix(), tmat);
+            }
+            else {
+                tmat.copyFrom(this._parent.getAbsoluteTransform());
+            }
+            tmat.invert();
+            BABYLON.Vector3.TransformCoordinatesToRef(position, tmat, vec);
+            var lm = this.getLocalMatrix();
+            lm.m[12] = vec.x;
+            lm.m[13] = vec.y;
+            lm.m[14] = vec.z;
+            this.markAsDirty();
+        };
         Bone.prototype.setScale = function (x, y, z, scaleChildren) {
             if (scaleChildren === void 0) { scaleChildren = false; }
+            if (this.animations[0] && !this.animations[0].isStopped()) {
+                if (!scaleChildren) {
+                    this._negateScaleChildren.x = 1 / x;
+                    this._negateScaleChildren.y = 1 / y;
+                    this._negateScaleChildren.z = 1 / z;
+                }
+                this._syncScaleVector();
+            }
             this.scale(x / this._scaleVector.x, y / this._scaleVector.y, z / this._scaleVector.z, scaleChildren);
         };
         Bone.prototype.scale = function (x, y, z, scaleChildren) {
@@ -29848,13 +29929,9 @@ var BABYLON;
                 this.getAbsoluteTransform().copyFrom(locMat);
             }
             var len = this.children.length;
-            for (var i = 0; i < len; i++) {
-                var parentAbsMat = this.children[i]._parent.getAbsoluteTransform();
-                this.children[i].getLocalMatrix().multiplyToRef(parentAbsMat, this.children[i].getAbsoluteTransform());
-            }
             scaleMat.invert();
-            if (this.children[0]) {
-                var child = this.children[0];
+            for (var i = 0; i < len; i++) {
+                var child = this.children[i];
                 var cm = child.getLocalMatrix();
                 cm.multiplyToRef(scaleMat, cm);
                 var lm = child.getLocalMatrix();
@@ -29862,6 +29939,7 @@ var BABYLON;
                 lm.m[13] *= y;
                 lm.m[14] *= z;
             }
+            this.computeAbsoluteTransforms();
             if (scaleChildren) {
                 for (var i = 0; i < len; i++) {
                     this.children[i].scale(x, y, z, scaleChildren);
@@ -29942,18 +30020,7 @@ var BABYLON;
             lmat.m[12] = lx;
             lmat.m[13] = ly;
             lmat.m[14] = lz;
-            if (parent) {
-                var parentAbsMat = this._parent.getAbsoluteTransform();
-                lmat.multiplyToRef(parentAbsMat, this.getAbsoluteTransform());
-            }
-            else {
-                this.getAbsoluteTransform().copyFrom(lmat);
-            }
-            var len = this.children.length;
-            for (var i = 0; i < len; i++) {
-                var parentAbsMat = this.children[i]._parent.getAbsoluteTransform();
-                this.children[i].getLocalMatrix().multiplyToRef(parentAbsMat, this.children[i].getAbsoluteTransform());
-            }
+            this.computeAbsoluteTransforms();
             this.markAsDirty();
         };
         Bone.prototype._getNegativeRotationToRef = function (rotMatInv, space, mesh) {
@@ -34308,6 +34375,7 @@ var BABYLON;
         function ActionManager(scene) {
             // Members
             this.actions = new Array();
+            this.hoverCursor = '';
             this._scene = scene;
             scene._actionManagers.push(this);
         }
@@ -39020,6 +39088,7 @@ var BABYLON;
             this._context = this._canvas.getContext("2d");
             this._context.font = font;
             this._context.fillStyle = "white";
+            this._context.textBaseline = "top";
             this._cachedFontId = null;
             var res = this.getFontHeight(font);
             this._lineHeightSuper = res.height + 4;
@@ -39164,7 +39233,7 @@ var BABYLON;
             // In sdf mode we render the character in an intermediate 2D context which scale the character this._sdfScale times (which is required to compute the sdf map accurately)
             if (this._signedDistanceField) {
                 this._sdfContext.clearRect(0, 0, this._sdfCanvas.width, this._sdfCanvas.height);
-                this._sdfContext.fillText(char, 0, 0);
+                this._sdfContext.fillText(char, 0, -this._offset);
                 var data = this._sdfContext.getImageData(0, 0, width * this._sdfScale, this._sdfCanvas.height);
                 var res = this._computeSDFChar(data);
                 this._context.putImageData(res, this._currentFreePosition.x, this._currentFreePosition.y);
@@ -50859,7 +50928,7 @@ var BABYLON;
             var texture = null;
             if (parsedTexture.name && !parsedTexture.isRenderTarget) {
                 var size = parsedTexture.isBABYLONPreprocessed ? null : parsedTexture.size;
-                texture = new BABYLON.HDRCubeTexture(rootUrl + parsedTexture.name, scene, size, texture.generateHarmonics, texture.useInGammaSpace, texture.usePMREMGenerator);
+                texture = new BABYLON.HDRCubeTexture(rootUrl + parsedTexture.name, scene, size, parsedTexture.generateHarmonics, parsedTexture.useInGammaSpace, parsedTexture.usePMREMGenerator);
                 texture.name = parsedTexture.name;
                 texture.hasAlpha = parsedTexture.hasAlpha;
                 texture.level = parsedTexture.level;
