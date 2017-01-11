@@ -287,7 +287,8 @@ declare module BABYLON {
         materials: Object;
         animations: Object;
         skins: Object;
-        currentScene: Object;
+        currentScene?: Object;
+        scenes: Object;
         extensionsUsed: string[];
         extensionsRequired?: string[];
         buffersCount: number;
@@ -344,8 +345,8 @@ declare module BABYLON {
         /**
         * Static members
         */
-        static MakeYUP: boolean;
         static HomogeneousCoordinates: boolean;
+        static IncrementalLoading: boolean;
         static Extensions: {
             [name: string]: GLTFFileLoaderExtension;
         };
@@ -424,6 +425,13 @@ declare module BABYLON {
          * @param view: the buffer view
          */
         static DecodeBufferToText(view: ArrayBufferView): string;
+        /**
+         * Returns the default material of gltf. Related to
+         * https://github.com/KhronosGroup/glTF/tree/master/specification/1.0#appendix-a-default-material
+         * @param scene: the Babylon.js scene
+         */
+        static GetDefaultMaterial(scene: Scene): ShaderMaterial;
+        private static _DefaultMaterial;
     }
 }
 
